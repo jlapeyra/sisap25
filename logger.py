@@ -44,3 +44,22 @@ def log(*values: object, sep: str | None = " ", end: str | None = "\n"):
         __new_line = True
 
 
+LOOP_START_TIME = None
+def start_loop_time():
+    global LOOP_START_TIME
+    LOOP_START_TIME = time.time()
+    log('start_loop_time()')
+
+def stop_loop_time():
+    global LOOP_START_TIME
+    LOOP_START_TIME = None
+    log('stop_loop_time()')
+
+def log_expected_time(ended_iteration, total_iterations):
+    global LOOP_START_TIME
+    assert LOOP_START_TIME is not None, f'call start_loop_time before log_expected_time'
+    it = ended_iteration + 1
+    time_loop = time.time() - LOOP_START_TIME
+    time_before_loop = LOOP_START_TIME - START_TIME
+    log(f'Iteration {format_num(it)}/{format_num(total_iterations)} | {format_time(time_loop/it)}/it'
+        f' | Expected end loop: {Colors.yellow(format_time(time_before_loop + time_loop/it*total_iterations))}')

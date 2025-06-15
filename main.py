@@ -17,13 +17,13 @@ from metadata import get_k
 import json
 import threading
 from eval import load_solution, get_recall
-import time
 from logger import log, time_since_start
 import math
+import logger
 
-NUM_THREADS = 8
+NUM_THREADS = 6
 RAM_LIMIT = 16 * 1024**3  # 16 GB
-
+BATCH_SIZE = 20_000
 
 @dataclass
 class Params:
@@ -73,7 +73,7 @@ def load_data(dataset, task):
         queries = DATASETS[dataset][task]['queries'](data_file)
     else:
         queries = data
-    log(f'Loaded {len(data)} data points, {len(queries)} queries')
+    logger.log(f'Loaded {len(data)} data points, {len(queries)} queries')
     return data, queries
 
 
@@ -210,19 +210,24 @@ def task1(
 
     task = 'task1'
     k = get_k(task)
-    log(len(data), 'data points,', len(queries), 'queries')
+    logger.log(len(data), 'data points,', len(queries), 'queries')
     N = len(data)
 
     data_size = N * data.shape[1] * 4
-    num_batches = math.ceil(data_size/(RAM_LIMIT/4))
+    global BATCH_SIZE
+    if BATCH_SIZE:
+        num_batches = math.ceil(data.shape[0]/BATCH_SIZE)
+    else:
+        num_batches = math.ceil(data_size/(RAM_LIMIT/4))
 
     N_Q = len(queries)
     I, D = np.zeros((N_Q, k), dtype=np.int32), np.zeros((N_Q, k), dtype=np.float32)
     batch_size = N // num_batches
+    logger.start_loop_time()
     for i in range(num_batches):
         start = i * batch_size
         end = (i + 1) * batch_size if i < num_batches - 1 else N
-        log(f'Processing batch {i+1}/{num_batches} ({start}:{end})')
+        logger.log(f'Processing batch {i+1}/{num_batches} ({start}:{end})')
 
         sliced_data = data[start:end]
 
@@ -252,7 +257,9 @@ def task1(
             D=D,
             params=params
         )
-        #get_recall(task, dataset, I, data_coverage=end/len(data), data_size=len(data))
+        get_recall(task, dataset, I, data_coverage=end/len(data), data_size=len(data))
+        logger.log_expected_time(i, num_batches)
+    logger.stop_loop_time()
     return I, D
 
 @timed
@@ -275,12 +282,17 @@ def task2(
     )
     I, D = np.zeros((N, k), dtype=np.int32), np.zeros((N, k), dtype=np.float32)
 
-    num_batches = N // 150_000
+    global BATCH_SIZE
+    if BATCH_SIZE:
+        num_batches = math.ceil(N/BATCH_SIZE)
+    else:
+        num_batches = math.ceil(N/150_000)
     batch_size = N // num_batches
+    logger.start_loop_time()
     for i in range(num_batches):
         start = i * batch_size
         end = (i + 1) * batch_size if i < num_batches - 1 else N
-        log(f'Processing batch {i+1}/{num_batches} ({start}:{end})')
+        logger.log(f'Processing batch {i+1}/{num_batches} ({start}:{end})')
         query_slice = slice(start, end)
         search(
             I, D, False,
@@ -302,7 +314,9 @@ def task2(
             D=D[:end],
             params=params
         )
-        #get_recall(task, dataset, I[:end], no_self_loops=params.no_self_loops)
+        get_recall(task, dataset, I[:end], no_self_loops=params.no_self_loops)
+        logger.log_expected_time(i, num_batches)
+    logger.start_loop_time()
     return I, D
 
 
@@ -315,10 +329,12 @@ def main(
     params:'Params'=None,
 ):
 
-    log(f'Running {task} on {dataset}')
+    logger.log(f'Running {task} on {dataset}')
 
     if params is None:
         params = defaultParams(task)
+
+    logger.log(params.to_dict())
 
     prepare(dataset, task)
     data, queries = load_data(dataset, task)
@@ -346,13 +362,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task",
         choices=['task1', 'task2'],
-        default='task2'
+        default='task1'
     )
 
     parser.add_argument(
         '--dataset',
         choices=DATASETS.keys(),
-        default='ccnews-small'
+        default='pubmed23'
     )
 
     args = parser.parse_args()
@@ -366,8 +382,8 @@ if __name__ == "__main__":
 
 
 
-#log(d)
-#log(i)
+#logger.log(d)
+#logger.log(i)
 
 
 
